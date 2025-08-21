@@ -17,15 +17,13 @@ FROM node:18-alpine
 
 WORKDIR /app
 
-# Copy compiled files and package.json separately
-COPY --from=build /app .
-COPY entrypoint.sh .
-
-RUN npm install
-
-RUN chmod +x entrypoint.sh
+# Copy production dependencies and compiled code from the build stage
+COPY --from=build /app/package*.json ./
+RUN npm install --production
+COPY --from=build /app/dist ./dist
+COPY --from=build /app/sql ./sql
 
 EXPOSE 5000
 
-# Run the entrypoint script
-CMD ["./entrypoint.sh"]
+# Start the application
+CMD ["npm", "start"]
