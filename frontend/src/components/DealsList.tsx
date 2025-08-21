@@ -34,56 +34,86 @@ const DealsList: React.FC<DealsListProps> = ({
     filters,
     pageSize = 10,
 }) => {
-    const [deals, setDeals] = useState<Deal[]>([]);
+    const [allDeals, setAllDeals] = useState<Deal[]>([]);
+    const [filteredDeals, setFilteredDeals] = useState<Deal[]>([]);
     const [loading, setLoading] = useState<boolean>(false);
     const [error, setError] = useState<string | null>(null);
     const [page, setPage] = useState<number>(1);
-    const [hasMore, setHasMore] = useState<boolean>(false);
-
-    const fetchDeals = async (pageNumber: number) => {
-        setLoading(true);
-        setError(null);
-        try {
-            const data = await getDeals({
-                search: searchTerm,
-                stage: filters.stage,
-                minValue: filters.minValue,
-                maxValue: filters.maxValue,
-                dateCreatedFrom: filters.dateCreatedFrom,
-                dateCreatedTo: filters.dateCreatedTo,
-                closeDateFrom: filters.closeDateFrom,
-                closeDateTo: filters.closeDateTo,
-                page: pageNumber,
-                limit: pageSize,
-            });
-
-            setDeals(data.data);
-            setHasMore(data.data.length === pageSize);
-        } catch (error) {
-            setError('Failed to load deals.');
-        } finally {
-            setLoading(false);
-        }
-    };
 
     useEffect(() => {
-        setPage(1);
-        fetchDeals(1);
-    }, [searchTerm, filters, pageSize]);
+        const fetchAllDeals = async () => {
+            setLoading(true);
+            setError(null);
+            try {
+                // Fetch all deals without pagination or filters from the backend
+                const data = await getDeals({});
+                setAllDeals(data.data);
+                setFilteredDeals(data.data);
+            } catch (error) {
+                setError('Failed to load deals.');
+            } finally {
+                setLoading(false);
+            }
+        };
+        fetchAllDeals();
+    }, []);
 
-    // Only fetch data when page changes (but not when filters change)
     useEffect(() => {
-        if (page > 1) {
-            fetchDeals(page);
+        let deals = [...allDeals];
+
+        // Apply search term filter
+        if (searchTerm) {
+            const lowercasedTerm = searchTerm.toLowerCase();
+            deals = deals.filter(
+                (deal) =>
+                    deal.name.toLowerCase().includes(lowercasedTerm) ||
+                    deal.contact_name.toLowerCase().includes(lowercasedTerm) ||
+                    deal.company.toLowerCase().includes(lowercasedTerm)
+            );
         }
-    }, [page]);
+
+        // Apply filters
+        deals = deals.filter((deal) => {
+            if (filters.stage && deal.stage !== filters.stage) {
+                return false;
+            }
+            if (filters.minValue && deal.value < parseFloat(filters.minValue)) {
+                return false;
+            }
+            if (filters.maxValue && deal.value > parseFloat(filters.maxValue)) {
+                return false;
+            }
+            if (filters.dateCreatedFrom && new Date(deal.created_at) < new Date(filters.dateCreatedFrom)) {
+                return false;
+            }
+            if (filters.dateCreatedTo && new Date(deal.created_at) > new Date(filters.dateCreatedTo)) {
+                return false;
+            }
+            if (filters.closeDateFrom && deal.close_date && new Date(deal.close_date) < new Date(filters.closeDateFrom)) {
+                return false;
+            }
+            if (filters.closeDateTo && deal.close_date && new Date(deal.close_date) > new Date(filters.closeDateTo)) {
+                return false;
+            }
+            return true;
+        });
+
+        setFilteredDeals(deals);
+        setPage(1); // Reset to first page on new filter
+    }, [searchTerm, filters, allDeals]);
+
+    const totalPages = Math.ceil(filteredDeals.length / pageSize);
+    const paginatedDeals = filteredDeals.slice(
+        (page - 1) * pageSize,
+        page * pageSize
+    );
 
     const handlePrev = () => {
-        if (page > 1) setPage(page - 1);
+        setPage((prevPage) => Math.max(prevPage - 1, 1));
     };
 
     const handleNext = () => {
-        if (hasMore) setPage(page + 1);
+        setPage((prevPage) => Math.min(prevPage + 1, totalPages));
     };
 
     if (loading) {
@@ -102,7 +132,7 @@ const DealsList: React.FC<DealsListProps> = ({
         );
     }
 
-    if (deals.length === 0) {
+    if (paginatedDeals.length === 0) {
         return (
             <Typography mt={4} align="center">
                 No deals found.
@@ -126,7 +156,7 @@ const DealsList: React.FC<DealsListProps> = ({
                         </TableRow>
                     </TableHead>
                     <TableBody>
-                        {deals.map((deal) => (
+                        {paginatedDeals.map((deal) => (
                             <TableRow
                                 key={deal.id}
                                 sx={{
@@ -153,9 +183,9 @@ const DealsList: React.FC<DealsListProps> = ({
                     Previous
                 </Button>
                 <Typography variant="body1" align="center" sx={{ alignSelf: 'center' }}>
-                    Page {page}
+                    Page {page} of {totalPages}
                 </Typography>
-                <Button variant="contained" onClick={handleNext} disabled={!hasMore}>
+                <Button variant="contained" onClick={handleNext} disabled={page === totalPages || totalPages === 0}>
                     Next
                 </Button>
             </Stack>
